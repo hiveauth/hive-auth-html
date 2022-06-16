@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-F3w7mX95PdgyTmZZMECAngseQB83DfGTowi0iMjiWaeVhAn4FJkqJByhZMI3AhiU" crossorigin="anonymous">
+</head>
+<body>
+    <div id="login_req" class="container">
+        <div class="row-fluid">
+            <div class="login well well-small">
+                <div class="center">
+                <img src="./logo.png" alt="logo"> 
+                </div>
+                <div class="control-group">
+                    <div class="input-prepend">
+                    <span class="add-on"><i class="icon-user"></i></span>
+                    <input name="data[User][username]" required="required" placeholder="Username" maxlength="16" type="text" id="username"> 
+                    </div>
+                </div>
+                <div class="control-group">
+                    <button type="button" class="btn btn-danger btn-large" onclick="click_login()">Sign in with HAS</button>
+                </div>
+                </form>
+            </div><!--/.login-->
+        </div><!--/.row-fluid-->
+    </div><!--/.container-->
+    <div id="login_wait" class="container">
+        <div class="center">
+            <img src="./logo.png" alt="logo"> 
+        </div>
+        <center>
+            <h3>Waiting for login approval</h3>
+            <div class="qr-code"><span></span></div>
+            Start your PKSA application
+        </center>
+    </div><!--/.container-->
+    <div id="login_ack" class="container">
+        <center>
+            <h3>Login approved</h3>You can now sign transactions
+        </center>
+            <hr style="color:">
+            <center>
+                <button type="button" class="btn btn-primary btn-large" onclick="click_posting()">Posting Key</button>
+            </center>
+            </br>
+            <center>
+                <button type="button" class="btn btn-primary btn-large" onclick="click_active()">Active Key</button>
+            </center>
+            </br>
+            <center>
+                <button type="button" class="btn btn-danger btn-large" onclick="click_logout()">Logout</button>
+            </center>
+    </div><!--/.container-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/uuid/8.1.0/uuidv4.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js" integrity="sha512-E8QSvWZ0eCLGk4km3hxSsNmGWbLtSCSUcewDQPQWZF6pEU8GlT8a5fF32wOl1i8ftdMhssTrF/OhyGWwonTcXA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+        // UI elements
+        const uiLoginReq  = document.getElementById("login_req")
+        const uiLoginWait = document.getElementById("login_wait")
+        const uiLoginAck  = document.getElementById("login_ack")
+        // HAS variables
+        const HAS_SERVER = "wss://hive-auth.arcange.eu"
+        const HAS_APP_DATA = {
+            name:"has-demo-client-html",
+            description:"Demo - HiveAuth from html",
+            // icon:"https://domain.com/logo.png",
+        }
+        const app_key = uuidv4();
+        let username
+        let token
+        let expire
+        let auth_key
+        let auth_uuid
+		// Initialize WebSocket
+        let ws = undefined
+		if ("WebSocket" in window) {
+			// The browser support Websocket
+			ws = new WebSocket(HAS_SERVER)
+			ws.onopen = function() {
+				// Web Socket is connected
+				console.log("WebSocket connected")
+                uiLoginReq.style.display = 'block'
+                uiLoginWait.style.display = 'none'
+                uiLoginAck.style.display = 'none'
+			}
+			ws.onmessage = function (event) { 
+				//const msg = JSON.parse(evt.data)
+				console.log(event.data)
+                const message = typeof(event.data)=="string" ? JSON.parse(event.data) : event.data
+                // Process HAS <-> PKSA protocol
+                if(message.cmd) {
+                    switch(message.cmd) {
+                        case "auth_wait":
+                            uiLoginReq.style.display = 'none'
+                            uiLoginWait.style.display = 'block'
+                            uiLoginAck.style.display = 'none'
+
+                            // Update QRCode
+                            const json = JSON.stringify({
+                                account: username, 
+                                uuid: message.uuid,
+                                key: auth_key,
+                                host: HAS_SERVER});
+
+                            const URI =  `has://auth_req/${btoa(json)}`
+                            var url = "https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=" + URI;
+                            document.getElementsByClassName("qr-code")[0].style.backgroundImage = "url(" + url + ")";
+                            document.getElementsByClassName("qr-code")[0].style.backgroundSize = "100% 100%";
+                            document.getElementsByClassName("qr-code")[0].innerHTML = "";
+                            document.getElementsByClassName("qr-code")[0].style.border = "0";            
+                            break
+                        case "auth_ack":
+                            uiLoginReq.style.display = 'none'
+                            uiLoginWait.style.display = 'none'
+                            uiLoginAck.style.display = 'block'
+
+                            try {
+                                // Try to decrypt and parse payload data
+                                message.data = JSON.parse(CryptoJS.AES.decrypt(message.data, auth_key).toString(CryptoJS.enc.Utf8))
+                                token = message.data.token
+                                expire = message.data.expire
+                            } catch(e) {
+                                // Decryption failed - ignore message
+                                console.error("decryption failed",e.message)
+                                click_logout()
+                            }
+
+                            break
+                        case "auth_nack":
+                            click_logout()
+                            break;
+                        case "sign_wait":
+                            alert(`transaction ${message.uuid} is waiting for approval`)
+                            break
+                        case "sign_ack":
+                            alert(`transaction ${message.uuid} approved`)
+                            break
+                        case "sign_nack":
+                            alert(`transaction ${message.uuid} has been declined`)
+                            break
+                        case "sign_err":
+                            alert(`transaction ${message.uuid} failed: ${message.error}`)
+                            break
+                    }
+                }
+			}
+			// websocket is closed.
+			ws.onclose = function() { 
+				alert("WebSocket closed. Please reload the page...")
+			}
+		} else {
+			alert("The browser doesn't support WebSocket")
+		}
+
+        function click_login() {
+            username = $("#username").val();
+            const auth_data = {
+                app: HAS_APP_DATA,
+                token: undefined,
+                challenge: undefined
+            }
+
+            auth_key = uuidv4();
+            const data = CryptoJS.AES.encrypt(JSON.stringify(auth_data),auth_key).toString();
+            const payload = { cmd:"auth_req", account:username, data:data }
+            ws.send(JSON.stringify(payload))
+        }
+        function click_logout() {
+            uiLoginReq.style.display = 'block'
+            uiLoginWait.style.display = 'none'
+            uiLoginAck.style.display = 'none'
+
+            username = undefined
+            token = undefined
+            expire = undefined
+        }
+
+        function click_posting() {
+            const op = [ 
+                "custom_json",
+                {
+                    id: "test",
+                    json: '{"action":"test HAS posting"}',
+                    required_auths: [],
+                    required_posting_auths: [username],
+                }
+            ]
+            const sign_data = {
+                key_type: "posting",
+                ops: [op],
+                broadcast: true
+            }
+            const data = CryptoJS.AES.encrypt(JSON.stringify(sign_data),auth_key).toString()
+            const payload = { cmd:"sign_req", account:username, token:token, data:data }
+            ws.send(JSON.stringify(payload))
+        }
+        function click_active() {
+            const op = [ 
+                "transfer",
+                {
+                    from: username,
+                    to: 'arcange',
+                    amount: '1.000 HIVE',
+                    memo: "test HAS active",
+                }
+            ]
+            const sign_data = {
+                key_type: "active",
+                ops: [op],
+                broadcast: true
+            }
+            const data = CryptoJS.AES.encrypt(JSON.stringify(sign_data),auth_key).toString()
+            const payload = { cmd:"sign_req", account:username, token:token, data:data }
+            ws.send(JSON.stringify(payload))
+        }
+    </script>
+    <style type="text/css">
+        #login img{
+        margin: 10px 0;
+        }
+        #login .center {
+        text-align: center;
+        }
+
+        #login .login {
+        max-width: 300px;
+        margin: 35px auto;
+        }
+
+        #login .login-form{
+        padding:0px 25px;
+        }
+    
+        hr {
+        color: #ff0000;
+        }    
+
+        .qr-code{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 200px;
+            height: 200px;
+            border: 1px solid #888;
+            font-size: 14px;
+        }
+        .textbox{
+            width: 200px;
+            height: 30px;
+            color: #000;
+            background: #fff;
+            outline: none;
+            border: 1px solid #888;
+            border-radius: 5px;
+            font-size: 14px;
+            padding-left: 5px;
+        }
+        .btn{
+            width: 200px;
+            height: 30px;
+            outline: none;
+            border: 0;
+            background: #a01350;
+            cursor: pointer;
+            color: #fff;
+        }
+        .btn:active{
+            background: #490b25;
+        }
+    </style>
+</body>
+</html>
