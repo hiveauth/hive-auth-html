@@ -48,6 +48,10 @@
             </center>
             </br>
             <center>
+                <button type="button" class="btn btn-danger btn-large" onclick="click_challenge()">Challenge</button>
+            </center>
+            </br>
+            <center>
                 <button type="button" class="btn btn-danger btn-large" onclick="click_logout()">Logout</button>
             </center>
     </div><!--/.container-->
@@ -141,6 +145,18 @@
                         case "sign_err":
                             alert(`transaction ${message.uuid} failed: ${message.error}`)
                             break
+                        case "challenge_wait":
+                            alert(`challenge ${message.uuid} is waiting to be signed`)
+                            break
+                        case "challenge_ack":
+                            alert(`challenge ${message.uuid} signed`)
+                            break
+                        case "challenge_nack":
+                            alert(`challenge ${message.uuid} has been declined`)
+                            break
+                        case "challenge_err":
+                            alert(`challenge ${message.uuid} failed: ${message.error}`)
+                            break
                     }
                 }
 			}
@@ -203,7 +219,7 @@
                 {
                     from: username,
                     to: 'arcange',
-                    amount: '1.000 HIVE',
+                    amount: '0.001 HIVE',
                     memo: "test HAS active",
                 }
             ]
@@ -219,6 +235,28 @@
                 }
             ws.send(JSON.stringify(payload))
         }
+        function click_challenge() {
+            const op = [ 
+                "custom_json",
+                {
+                    id: "test",
+                    json: '{"action":"test HAS posting"}',
+                    required_auths: [],
+                    required_posting_auths: [username],
+                }
+            ]
+            const challenge_data = {
+                key_type: "posting",
+                challenge: Date.now(),
+                nonce: Date.now()
+            }
+            const data = CryptoJS.AES.encrypt(JSON.stringify(challenge_data),auth_key).toString()
+            const payload = { cmd:"challenge_req", account:username, data:data 
+                , token:token // DEPRECATED since protocol v1
+                }
+            ws.send(JSON.stringify(payload))
+        }
+
     </script>
     <style type="text/css">
         #login img{
