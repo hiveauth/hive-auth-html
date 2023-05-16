@@ -179,6 +179,7 @@
             auth_key = uuidv4();
             const data = CryptoJS.AES.encrypt(JSON.stringify(auth_data),auth_key).toString();
             const payload = { cmd:"auth_req", account:username, data:data }
+            console.log(JSON.stringify(payload))
             ws.send(JSON.stringify(payload))
         }
         function click_logout() {
@@ -211,6 +212,7 @@
             const payload = { cmd:"sign_req", account:username, data:data 
                 , token:token // DEPRECATED since protocol v1
                 }
+            console.log(JSON.stringify(payload))
             ws.send(JSON.stringify(payload))
         }
         function click_active() {
@@ -233,6 +235,7 @@
             const payload = { cmd:"sign_req", account:username, data:data 
                 , token:token // DEPRECATED since protocol v1
                 }
+            console.log(JSON.stringify(payload))
             ws.send(JSON.stringify(payload))
         }
         function click_challenge() {
@@ -254,6 +257,7 @@
             const payload = { cmd:"challenge_req", account:username, data:data 
                 , token:token // DEPRECATED since protocol v1
                 }
+            console.log(JSON.stringify(payload))
             ws.send(JSON.stringify(payload))
         }
 
