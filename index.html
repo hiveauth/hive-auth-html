@@ -48,9 +48,22 @@
             </center>
             </br>
             <center>
-                <button type="button" class="btn btn-danger btn-large" onclick="click_challenge()">Challenge</button>
+                <button type="button" class="btn btn-danger btn-large" onclick="click_challenge_encrypt()">Challenge</button>
             </center>
             </br>
+            <center>
+                <div class="control-group">
+                    <div class="input-prepend">
+                    <span class="add-on"><i class="icon-user"></i></span>
+                    <input name="data[User][memo]" placeholder="memo" maxlength="256" type="text" id="memo"> 
+                    </div>
+                </div>
+                <div class="control-group">
+                    <button type="button" class="btn btn-danger btn-large" onclick="click_challenge_decrypt()">Decrypt</button>
+                </div>
+            </center>
+            </br>
+
             <center>
                 <button type="button" class="btn btn-danger btn-large" onclick="click_logout()">Logout</button>
             </center>
@@ -63,19 +76,31 @@
         const uiLoginWait = document.getElementById("login_wait")
         const uiLoginAck  = document.getElementById("login_ack")
         // HAS variables
-        const HAS_SERVER = "wss://hive-auth.arcange.eu"
+        const HAS_SERVER = "wss://has.hiveauth.com"
         const HAS_APP_DATA = {
             name:"has-demo-client-html",
             description:"Demo - HiveAuth from html",
             // icon:"https://domain.com/logo.png",
         }
+        const CHALLENGE_TEXT = "challenge unencrypted"
+
         const app_key = uuidv4();
         let username
         let token
         let expire
         let auth_key
         let auth_uuid
-		// Initialize WebSocket
+
+        function decrypt(data) {
+            const decrypted = CryptoJS.AES.decrypt(data, auth_key).toString(CryptoJS.enc.Utf8)
+            try {
+                return JSON.parse(decrypted) 
+            } catch(e) {
+                return decrypted
+            }
+        }
+
+        // Initialize WebSocket
         let ws = undefined
 		if ("WebSocket" in window) {
 			// The browser support Websocket
@@ -120,9 +145,8 @@
 
                             try {
                                 // Try to decrypt and parse payload data
-                                message.data = JSON.parse(CryptoJS.AES.decrypt(message.data, auth_key).toString(CryptoJS.enc.Utf8))
-                                token = message.data.token // DEPRECATED since protocol v1
-                                expire = message.data.expire
+                                auth_ack_data = decrypt(message.data)
+                                expire = auth_ack_data.expire
                             } catch(e) {
                                 // Decryption failed - ignore message
                                 console.error("decryption failed",e.message)
@@ -143,19 +167,24 @@
                             alert(`transaction ${message.uuid} has been declined`)
                             break
                         case "sign_err":
-                            alert(`transaction ${message.uuid} failed: ${message.error}`)
+                        alert(`transaction error: ${decrypt(message.error)}`)
                             break
                         case "challenge_wait":
                             alert(`challenge ${message.uuid} is waiting to be signed`)
                             break
                         case "challenge_ack":
-                            alert(`challenge ${message.uuid} signed`)
+                            const challenge_ack_data = decrypt(message.data)
+                            if(challenge_ack_data.challenge[0]="#") {
+                                alert(`decrypted value:  ${challenge_ack_data.challenge}`)
+                            } else {
+                                alert(`challenge ${message.uuid} signed`)
+                            }
                             break
                         case "challenge_nack":
                             alert(`challenge ${message.uuid} has been declined`)
                             break
                         case "challenge_err":
-                            alert(`challenge ${message.uuid} failed: ${message.error}`)
+                            alert(`challenge error: ${decrypt(message.error)}`)
                             break
                     }
                 }
@@ -179,7 +208,6 @@
             auth_key = uuidv4();
             const data = CryptoJS.AES.encrypt(JSON.stringify(auth_data),auth_key).toString();
             const payload = { cmd:"auth_req", account:username, data:data }
-            console.log(JSON.stringify(payload))
             ws.send(JSON.stringify(payload))
         }
         function click_logout() {
@@ -238,25 +266,30 @@
             console.log(JSON.stringify(payload))
             ws.send(JSON.stringify(payload))
         }
-        function click_challenge() {
-            const op = [ 
-                "custom_json",
-                {
-                    id: "test",
-                    json: '{"action":"test HAS posting"}',
-                    required_auths: [],
-                    required_posting_auths: [username],
-                }
-            ]
+        function click_challenge_encrypt() {
             const challenge_data = {
                 key_type: "posting",
-                challenge: Date.now(),
+                challenge: CHALLENGE_TEXT,
                 nonce: Date.now()
             }
             const data = CryptoJS.AES.encrypt(JSON.stringify(challenge_data),auth_key).toString()
             const payload = { cmd:"challenge_req", account:username, data:data 
                 , token:token // DEPRECATED since protocol v1
                 }
+            console.log(JSON.stringify(payload))
+            ws.send(JSON.stringify(payload))
+        }
+        function click_challenge_decrypt() {
+            const memo  = $("#memo").val();
+            const challenge_data = {
+                key_type: "memo",
+                challenge: memo,
+                decrypt: true,
+                nonce: Date.now()
+            }
+            console.log(challenge_data)
+            const data = CryptoJS.AES.encrypt(JSON.stringify(challenge_data),auth_key).toString()
+            const payload = { cmd:"challenge_req", account:username, data:data }
             console.log(JSON.stringify(payload))
             ws.send(JSON.stringify(payload))
         }
